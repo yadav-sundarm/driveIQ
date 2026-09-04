@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.env.local
+
+# Python
+venv/
+*.egg-info/
+
+# Build
+dist/
+build/
