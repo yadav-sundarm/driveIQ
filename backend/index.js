@@ -1,10 +1,11 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+dotenv.config();
 import connectDB from "./db/db.js";
 import authRoutes from "./routes/auth.routes.js";
-
-dotenv.config();
+import categoryRoutes from "./routes/category.routes.js";
+import fileActionRoutes from "./routes/fileAction.routes.js";
 
 const app = express();
 app.use(cors());
@@ -24,5 +25,7 @@ const startServer = async () => {
 };
 
 app.use("/api/auth", authRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/files", fileActionRoutes);
 
 startServer();

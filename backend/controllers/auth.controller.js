@@ -1,15 +1,18 @@
 import { google } from "googleapis";
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
+import { startPolling } from "../services/polling.service.js";
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI,
-);
+const getOAuthClient = () =>
+  new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI,
+  );
 
 // Step 1 — redirect user to Google
 export const googleAuth = (req, res) => {
+  const oauth2Client = getOAuthClient();
   const url = oauth2Client.generateAuthUrl({
     access_type: "offline",
     scope: [
@@ -26,6 +29,7 @@ export const googleAuth = (req, res) => {
 // Step 2 — Google redirects back with code
 export const googleCallback = async (req, res) => {
   try {
+    const oauth2Client = getOAuthClient();
     const { code } = req.query;
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
@@ -54,6 +58,8 @@ export const googleCallback = async (req, res) => {
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
+
+    startPolling(user._id.toString());
 
     // Redirect to frontend with token
     res.redirect(`http://localhost:5173/dashboard?token=${token}`);
