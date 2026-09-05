@@ -24,10 +24,6 @@ KEYWORD_PATTERNS = {
 }
 
 ALL_CATEGORY_KEYWORDS = {kw for patterns in KEYWORD_PATTERNS.values() for kw in patterns}
-
-# Categories where a subject subfolder actually makes sense — a random
-# downloaded book or a zip archive isn't "for" a subject the way an
-# assignment or note is
 SUBJECT_ELIGIBLE_CATEGORIES = {"Assignments", "Notes", "Certificates", "Documents"}
 
 STOPWORDS = {
@@ -49,18 +45,15 @@ def classify_by_keywords(keywords: list) -> tuple:
         score = sum(1 for kw in keywords if any(p in kw for p in patterns))
         if score > 0:
             scores[category] = score
-    
+
     if not scores:
         return "Miscellaneous", 0.0
-    
+
     best_category = max(scores, key=scores.get)
     confidence = min(scores[best_category] / 3, 1.0)
     return best_category, round(confidence, 2)
 
 def is_name_match(token: str, name_parts: list) -> bool:
-    """Fuzzy-matches a filename token against the logged-in user's own
-    name/surname, so it doesn't get mistaken for a subject code. Tolerant
-    of small typos (e.g. 'sundarm' vs 'sundaram')."""
     token_lower = token.lower()
     for part in name_parts:
         if not part:
@@ -69,16 +62,9 @@ def is_name_match(token: str, name_parts: list) -> bool:
             return True
     return False
 
-def extract_subject(file_name: str, user_name: str = ""):
-    """
-    Finds a subject code by elimination rather than by length: strips out
-    numbers (roll numbers, attempt numbers), category keywords, common
-    filler words, and the user's own name/surname — whatever's left over
-    is the subject candidate. Among survivors, a short ALL-CAPS token
-    (MCL, DBMS, OS...) is preferred as the clearest deliberate signal,
-    but any leftover token is used if that's all there is — no fixed
-    length requirement.
-    """
+def extract_subject_fallback(file_name: str, user_name: str = ""):
+    """Elimination-based guess — used only when nothing in the user's
+    existing Drive organization gives a better answer."""
     name_without_ext = re.sub(r'\.[^.]+$', '', file_name)
     raw_tokens = [t for t in re.split(r'[_\-\s]+', name_without_ext) if t]
     name_parts = [p.lower() for p in re.split(r'\s+', user_name) if p]
@@ -90,11 +76,11 @@ def extract_subject(file_name: str, user_name: str = ""):
     for token in raw_tokens:
         clean = clean_token(token)
         if not clean or clean.isdigit():
-            continue  # roll numbers, attempt numbers, etc.
+            continue
         if clean.lower() in ALL_CATEGORY_KEYWORDS or clean.lower() in STOPWORDS:
             continue
         if is_name_match(clean, name_parts):
-            continue  # the student's own name/surname
+            continue
         candidates.append(clean)
 
     if not candidates:
@@ -106,7 +92,38 @@ def extract_subject(file_name: str, user_name: str = ""):
 
     return candidates[0].upper()
 
-def classify_file(file_name: str, mime_type: str, user_name: str = "") -> dict:
+def extract_subject(file_name: str, user_name: str = "", known_subjects: dict = None):
+    """
+    Subject detection, in priority order:
+    1. A filename token exactly matches an existing subject folder's
+       name in the user's Drive — the strongest signal, since they
+       organized it themselves.
+    2. A filename token matches a keyword already seen in files sitting
+       inside that existing folder.
+    3. Fall back to elimination-based guessing.
+    """
+    known_subjects = known_subjects or {}
+    name_without_ext = re.sub(r'\.[^.]+$', '', file_name)
+    raw_tokens = [t for t in re.split(r'[_\-\s]+', name_without_ext) if t]
+    tokens_lower = [re.sub(r'[^A-Za-z0-9]', '', t).lower() for t in raw_tokens]
+
+    known_lower_map = {k.lower(): k for k in known_subjects.keys()}
+    for tok in tokens_lower:
+        if tok and tok in known_lower_map:
+            return known_lower_map[tok]
+
+    if known_subjects:
+        scores = {}
+        for subject, learned_keywords in known_subjects.items():
+            score = sum(1 for tok in tokens_lower if tok and tok in learned_keywords)
+            if score > 0:
+                scores[subject] = score
+        if scores:
+            return max(scores, key=scores.get)
+
+    return extract_subject_fallback(file_name, user_name)
+
+def classify_file(file_name: str, mime_type: str, user_name: str = "", known_subjects: dict = None) -> dict:
     keywords = extract_keywords_from_name(file_name)
     category, confidence = classify_by_keywords(keywords)
 
@@ -118,7 +135,7 @@ def classify_file(file_name: str, mime_type: str, user_name: str = "") -> dict:
 
     subject = None
     if category in SUBJECT_ELIGIBLE_CATEGORIES:
-        subject = extract_subject(file_name, user_name)
+        subject = extract_subject(file_name, user_name, known_subjects)
 
     return {
         "category": category,

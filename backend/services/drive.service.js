@@ -21,6 +21,46 @@ const NON_ORGANIZABLE_TYPES = [
   "application/vnd.google-apps.shortcut",
 ];
 
+const HINT_STOPWORDS = new Set([
+  "of",
+  "the",
+  "a",
+  "an",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "and",
+  "or",
+  "is",
+  "it",
+  "by",
+  "as",
+  "be",
+  "was",
+  "were",
+  "this",
+  "that",
+  "pdf",
+  "docx",
+  "doc",
+  "jpg",
+  "jpeg",
+  "png",
+  "zip",
+]);
+
+const extractSimpleKeywords = (fileName) => {
+  const nameWithoutExt = fileName.replace(/\.[^.]+$/, "");
+  return nameWithoutExt
+    .split(/[_\-\s]+/)
+    .map((t) => t.replace(/[^A-Za-z0-9]/g, "").toLowerCase())
+    .filter(
+      (t) => t && t.length >= 2 && !/^\d+$/.test(t) && !HINT_STOPWORDS.has(t),
+    );
+};
+
 export const getOrCreateFolder = async (drive, folderName, parentId = null) => {
   const query = parentId
     ? `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
@@ -53,12 +93,18 @@ export const moveFile = async (drive, fileId, folderId) => {
   });
 };
 
-export const classifyFile = async (fileName, mimeType, userName = "") => {
+export const classifyFile = async (
+  fileName,
+  mimeType,
+  userName = "",
+  knownSubjects = {},
+) => {
   try {
     const response = await axios.post("http://localhost:8000/classify", {
       file_name: fileName,
       mime_type: mimeType,
       user_name: userName,
+      known_subjects: knownSubjects,
     });
     return response.data;
   } catch (error) {
@@ -72,7 +118,89 @@ export const classifyFile = async (fileName, mimeType, userName = "") => {
   }
 };
 
-export const processNewFile = async (userId, fileId, fileName, mimeType) => {
+// Look at the user's existing Drive folder structure and learn from it:
+// folders sitting directly inside another folder are treated as "subject"
+// folders (matching the Category/Subject shape DriveIQ itself creates),
+// and files already inside each one contribute keyword hints. Only run
+// from Scan/Verify — this does a full folder walk, too heavy for the
+// 2-minute background poll.
+export const discoverExistingOrganization = async (drive) => {
+  const folders = []; // { id, name, parentId }
+  let pageToken = null;
+
+  do {
+    const response = await drive.files.list({
+      q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+      fields: "nextPageToken, files(id, name, parents)",
+      pageSize: 100,
+      pageToken,
+    });
+
+    for (const f of response.data.files || []) {
+      folders.push({
+        id: f.id,
+        name: f.name,
+        parentId: (f.parents || [])[0] || null,
+      });
+    }
+
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  const folderIds = new Set(folders.map((f) => f.id));
+
+  // Top-level = parent is Drive's root, not another folder we tracked
+  const topLevelFolders = folders.filter(
+    (f) => !f.parentId || !folderIds.has(f.parentId),
+  );
+
+  // Candidate "subject" folders = one level directly inside a top-level folder
+  const subjectFolders = folders.filter(
+    (f) => f.parentId && topLevelFolders.some((t) => t.id === f.parentId),
+  );
+
+  const knownSubjects = {};
+
+  for (const subjectFolder of subjectFolders) {
+    const keywordCounts = {};
+    let filePageToken = null;
+
+    do {
+      const filesRes = await drive.files.list({
+        q: `'${subjectFolder.id}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder'`,
+        fields: "nextPageToken, files(name)",
+        pageSize: 100,
+        pageToken: filePageToken,
+      });
+
+      for (const file of filesRes.data.files || []) {
+        for (const kw of extractSimpleKeywords(file.name)) {
+          keywordCounts[kw] = (keywordCounts[kw] || 0) + 1;
+        }
+      }
+
+      filePageToken = filesRes.data.nextPageToken;
+    } while (filePageToken);
+
+    // A keyword needs to show up more than once to count as a pattern —
+    // one stray word in a single filename isn't a reliable signal
+    const learnedKeywords = Object.entries(keywordCounts)
+      .filter(([, count]) => count > 1)
+      .map(([kw]) => kw);
+
+    knownSubjects[subjectFolder.name] = learnedKeywords;
+  }
+
+  return knownSubjects;
+};
+
+export const processNewFile = async (
+  userId,
+  fileId,
+  fileName,
+  mimeType,
+  knownSubjects = {},
+) => {
   try {
     const existing = await FileAction.findOne({ fileId, userId });
     if (existing) return null;
@@ -82,6 +210,7 @@ export const processNewFile = async (userId, fileId, fileName, mimeType) => {
       fileName,
       mimeType,
       user?.name || "",
+      knownSubjects,
     );
 
     const action = await FileAction.create({
@@ -105,6 +234,8 @@ export const scanExistingFiles = async (userId) => {
   const user = await User.findById(userId);
   const drive = getDriveClient(user.googleAccessToken, user.googleRefreshToken);
 
+  const knownSubjects = await discoverExistingOrganization(drive);
+
   let pageToken = null;
   let queuedCount = 0;
 
@@ -126,6 +257,7 @@ export const scanExistingFiles = async (userId) => {
         file.id,
         file.name,
         file.mimeType,
+        knownSubjects,
       );
       if (action) queuedCount++;
     }
@@ -139,6 +271,8 @@ export const scanExistingFiles = async (userId) => {
 export const verifyOrganization = async (userId) => {
   const user = await User.findById(userId);
   const drive = getDriveClient(user.googleAccessToken, user.googleRefreshToken);
+
+  const knownSubjects = await discoverExistingOrganization(drive);
 
   const actions = await FileAction.find({
     userId,
@@ -161,6 +295,7 @@ export const verifyOrganization = async (userId) => {
         file.data.name,
         file.data.mimeType,
         user?.name || "",
+        knownSubjects,
       );
       const changed =
         classification.subject !== action.subject ||
