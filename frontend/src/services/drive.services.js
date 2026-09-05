@@ -29,3 +29,13 @@ export const getFileHistory = async () => {
   const response = await api.get("/files/history");
   return response.data;
 };
+
+export const triggerPoll = async () => {
+  const response = await api.post("/files/poll-now");
+  return response.data;
+};
+
+export const scanExisting = async () => {
+  const response = await api.post("/files/scan");
+  return response.data;
+};

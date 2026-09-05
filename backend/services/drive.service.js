@@ -40,11 +40,12 @@ export const getOrCreateFolder = async (drive, folderName, parentId = null) => {
 // Move a file to a folder
 export const moveFile = async (drive, fileId, folderId) => {
   const file = await drive.files.get({ fileId, fields: "parents" });
-  const previousParents = file.data.parents.join(",");
+  const previousParents = (file.data.parents || []).join(",");
+
   await drive.files.update({
     fileId,
     addParents: folderId,
-    removeParents: previousParents,
+    ...(previousParents && { removeParents: previousParents }),
     fields: "id, parents",
   });
 };
@@ -63,19 +64,14 @@ export const classifyFile = async (fileName, mimeType) => {
   }
 };
 
-// Main function — scan and process new files
+// Main function — process a file (skips if already tracked)
 export const processNewFile = async (userId, fileId, fileName, mimeType) => {
   try {
-    const user = await User.findById(userId);
-    const drive = getDriveClient(
-      user.googleAccessToken,
-      user.googleRefreshToken,
-    );
+    const existing = await FileAction.findOne({ fileId, userId });
+    if (existing) return null; // already have a record for this file
 
-    // Classify the file
     const classification = await classifyFile(fileName, mimeType);
 
-    // Create FileAction with pending status
     const action = await FileAction.create({
       userId,
       fileName,
@@ -90,6 +86,42 @@ export const processNewFile = async (userId, fileId, fileName, mimeType) => {
     console.error("Error processing file:", error);
     throw error;
   }
+};
+
+// Scan the user's entire Drive and queue anything not yet tracked
+export const scanExistingFiles = async (userId) => {
+  const user = await User.findById(userId);
+  const drive = getDriveClient(user.googleAccessToken, user.googleRefreshToken);
+
+  let pageToken = null;
+  let queuedCount = 0;
+
+  do {
+    const response = await drive.files.list({
+      q: "trashed=false",
+      fields: "nextPageToken, files(id, name, mimeType)",
+      pageSize: 100,
+      pageToken,
+    });
+
+    const files = response.data.files || [];
+
+    for (const file of files) {
+      if (file.mimeType.startsWith("application/vnd.google-apps")) continue;
+
+      const action = await processNewFile(
+        userId,
+        file.id,
+        file.name,
+        file.mimeType,
+      );
+      if (action) queuedCount++;
+    }
+
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  return queuedCount;
 };
 
 // Execute confirmed move

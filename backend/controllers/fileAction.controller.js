@@ -1,5 +1,6 @@
 import FileAction from "../models/FileAction.js";
-import { executeMove } from "../services/drive.service.js";
+import { executeMove, scanExistingFiles } from "../services/drive.service.js";
+import { pollOnce } from "../services/polling.service.js";
 
 export const getPendingActions = async (req, res) => {
   try {
@@ -52,6 +53,25 @@ export const getFileHistory = async (req, res) => {
       .limit(50);
     res.status(200).json(actions);
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const scanExisting = async (req, res) => {
+  try {
+    const queuedCount = await scanExistingFiles(req.user.id);
+    res.status(200).json({ message: "Scan complete", queuedCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const triggerPoll = async (req, res) => {
+  try {
+    const result = await pollOnce(req.user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Manual poll error:", error);
     res.status(500).json({ message: error.message });
   }
 };
