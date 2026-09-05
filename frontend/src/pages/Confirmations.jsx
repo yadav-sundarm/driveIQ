@@ -52,7 +52,9 @@ const Confirmations = () => {
                                 <div>
                                     <p className="font-medium text-gray-900">{action.fileName}</p>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Move to → <span className="text-indigo-600 font-medium">{action.category}</span>
+                                        Move to → <span className="text-indigo-600 font-medium">
+                                            {action.category}{action.subject ? ` / ${action.subject}` : ''}
+                                        </span>
                                         <span className="ml-3 text-xs text-gray-400">
                                             Confidence: {Math.round(action.confidence * 100)}%
                                         </span>

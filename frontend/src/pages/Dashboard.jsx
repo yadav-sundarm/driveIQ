@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getMe } from '../services/auth.services'
-import { triggerPoll, scanExisting } from '../services/drive.services'
+import { triggerPoll, scanExisting, verifyOrganization } from '../services/drive.services'
 
 const Dashboard = () => {
     const [searchParams] = useSearchParams()
@@ -26,12 +26,16 @@ const Dashboard = () => {
     const handleCheckDrive = async () => {
         setChecking(true)
         try {
-            // Sequential on purpose — see note above about duplicate FileActions
+            // Sequential on purpose — avoids two functions racing to create
+            // a FileAction for the same file before either write commits
             const pollResult = await triggerPoll()
             console.log('Poll result:', pollResult)
 
             const scanResult = await scanExisting()
             console.log('Scan result:', scanResult)
+
+            const verifyResult = await verifyOrganization()
+            console.log('Verify result:', verifyResult)
         } catch (error) {
             console.error('Check Drive failed:', error.response?.data || error.message)
         } finally {

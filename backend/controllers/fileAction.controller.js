@@ -1,5 +1,9 @@
 import FileAction from "../models/FileAction.js";
-import { executeMove, scanExistingFiles } from "../services/drive.service.js";
+import {
+  executeMove,
+  scanExistingFiles,
+  verifyOrganization,
+} from "../services/drive.service.js";
 import { pollOnce } from "../services/polling.service.js";
 
 export const getPendingActions = async (req, res) => {
@@ -72,6 +76,16 @@ export const triggerPoll = async (req, res) => {
     res.status(200).json(result);
   } catch (error) {
     console.error("Manual poll error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const verifyFiles = async (req, res) => {
+  try {
+    const result = await verifyOrganization(req.user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Verify error:", error);
     res.status(500).json({ message: error.message });
   }
 };

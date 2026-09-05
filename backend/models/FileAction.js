@@ -12,6 +12,7 @@ const fileActionSchema = new mongoose.Schema(
     fromFolder: { type: String },
     toFolder: { type: String },
     category: { type: String },
+    subject: { type: String },
     status: {
       type: String,
       enum: ["pending", "confirmed", "rejected"],

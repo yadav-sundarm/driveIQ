@@ -6,6 +6,7 @@ import {
   getFileHistory,
   scanExisting,
   triggerPoll,
+  verifyFiles,
 } from "../controllers/fileAction.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 
@@ -15,6 +16,7 @@ router.get("/pending", authMiddleware, getPendingActions);
 router.get("/history", authMiddleware, getFileHistory);
 router.post("/scan", authMiddleware, scanExisting);
 router.post("/poll-now", authMiddleware, triggerPoll);
+router.post("/verify", authMiddleware, verifyFiles);
 router.patch("/:id/confirm", authMiddleware, confirmAction);
 router.patch("/:id/reject", authMiddleware, rejectAction);
 

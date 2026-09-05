@@ -39,3 +39,8 @@ export const scanExisting = async () => {
   const response = await api.post("/files/scan");
   return response.data;
 };
+
+export const verifyOrganization = async () => {
+  const response = await api.post("/files/verify");
+  return response.data;
+};

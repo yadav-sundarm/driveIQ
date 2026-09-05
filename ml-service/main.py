@@ -7,6 +7,7 @@ app = FastAPI()
 class FileRequest(BaseModel):
     file_name: str
     mime_type: str
+    user_name: str = ""
 
 @app.get("/")
 def root():
@@ -14,5 +15,5 @@ def root():
 
 @app.post("/classify")
 def classify(request: FileRequest):
-    result = classify_file(request.file_name, request.mime_type)
+    result = classify_file(request.file_name, request.mime_type, request.user_name)
     return result
