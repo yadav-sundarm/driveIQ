@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import User from "../models/User.js";
 import FileAction from "../models/FileAction.js";
 import axios from "axios";
+import Category from "../models/Category.js";
 
 const getDriveClient = (accessToken, refreshToken) => {
   const auth = new google.auth.OAuth2(
@@ -206,11 +207,19 @@ export const processNewFile = async (
     if (existing) return null;
 
     const user = await User.findById(userId);
+
+    // Fetch user's custom categories and merge into knownSubjects
+    const userCategories = await Category.find({ userId });
+    const mergedSubjects = { ...knownSubjects };
+    userCategories.forEach((cat) => {
+      mergedSubjects[cat.name] = cat.keywords;
+    });
+
     const classification = await classifyFile(
       fileName,
       mimeType,
       user?.name || "",
-      knownSubjects,
+      mergedSubjects,
     );
 
     const action = await FileAction.create({

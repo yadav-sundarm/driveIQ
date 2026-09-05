@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getMe } from '../services/auth.services'
 import { triggerPoll, scanExisting, verifyOrganization } from '../services/drive.services'
+import { getPendingActions, getFileHistory } from '../services/drive.services'
+import { getCategories } from '../services/category.services'
 
 const Dashboard = () => {
     const [searchParams] = useSearchParams()
     const navigate = useNavigate()
     const [user, setUser] = useState(null)
     const [checking, setChecking] = useState(false)
+    const [stats, setStats] = useState({ pending: 0, organized: 0, categories: 0 })
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -21,6 +24,24 @@ const Dashboard = () => {
             }
         }
         fetchUser()
+
+        const fetchStats = async () => {
+            try {
+                const [pending, history, categories] = await Promise.all([
+                    getPendingActions(),
+                    getFileHistory(),
+                    getCategories()
+                ])
+                setStats({
+                    pending: pending.length,
+                    organized: history.filter(a => a.status === 'confirmed').length,
+                    categories: categories.length
+                })
+            } catch (error) {
+                console.error('Stats error:', error)
+            }
+        }
+        fetchStats()
     }, [])
 
     const handleCheckDrive = async () => {
@@ -63,15 +84,16 @@ const Dashboard = () => {
             <div className="grid grid-cols-3 gap-6 mt-8">
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-500">Pending Actions</p>
-                    <p className="text-3xl font-bold text-indigo-600 mt-1">0</p>
+                    <p className="text-3xl font-bold text-indigo-600 mt-1">{stats.pending}</p>
+
                 </div>
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-500">Files Organized</p>
-                    <p className="text-3xl font-bold text-green-600 mt-1">0</p>
+                    <p className="text-3xl font-bold text-green-600 mt-1">{stats.organized}</p>
                 </div>
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <p className="text-sm text-gray-500">Categories</p>
-                    <p className="text-3xl font-bold text-purple-600 mt-1">0</p>
+                    <p className="text-3xl font-bold text-purple-600 mt-1">{stats.categories}</p>
                 </div>
             </div>
         </div>

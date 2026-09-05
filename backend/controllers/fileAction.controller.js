@@ -29,6 +29,19 @@ export const confirmAction = async (req, res) => {
     const updatedAction = await executeMove(req.user.id, req.params.id);
     res.status(200).json(updatedAction);
   } catch (error) {
+    // Handle Drive's "increasing parents" error gracefully
+    if (error.message?.includes("Increasing the number of parents")) {
+      await FileAction.findByIdAndUpdate(req.params.id, {
+        status: "failed",
+        failReason:
+          "File cannot be moved — it may be shared or have multiple parents",
+      });
+      return res.status(422).json({
+        message:
+          "This file cannot be moved automatically. It may be a shared file.",
+        code: "UNMOVABLE_FILE",
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };
