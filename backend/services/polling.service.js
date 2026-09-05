@@ -5,7 +5,7 @@ import { processNewFile } from "./drive.service.js";
 import { sendNotificationEmail } from "./notification.service.js";
 
 const processedFiles = new Set();
-const activePolls = new Map(); // userId -> intervalId
+const activePolls = new Map();
 
 const getDriveClient = (accessToken, refreshToken) => {
   const auth = new google.auth.OAuth2(
@@ -20,8 +20,13 @@ const getDriveClient = (accessToken, refreshToken) => {
   return google.drive({ version: "v3", auth });
 };
 
-// Run one poll cycle for a user and return what happened (used by both
-// the automatic interval and the manual "Check Now" trigger)
+// Only real, movable items skip these two — everything else (uploaded
+// files AND native Google Docs/Sheets/Slides) is fair game
+const NON_ORGANIZABLE_TYPES = [
+  "application/vnd.google-apps.folder",
+  "application/vnd.google-apps.shortcut",
+];
+
 export const pollOnce = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
@@ -43,7 +48,7 @@ export const pollOnce = async (userId) => {
     if (processedFiles.has(file.id)) continue;
     processedFiles.add(file.id);
 
-    if (file.mimeType.startsWith("application/vnd.google-apps")) continue;
+    if (NON_ORGANIZABLE_TYPES.includes(file.mimeType)) continue;
 
     console.log(`New file detected: ${file.name}`);
 
@@ -53,7 +58,7 @@ export const pollOnce = async (userId) => {
       file.name,
       file.mimeType,
     );
-    if (!action) continue; // already tracked
+    if (!action) continue;
 
     detected.push({ fileName: file.name, category: action.category });
 
@@ -78,7 +83,6 @@ export const pollOnce = async (userId) => {
 };
 
 export const startPolling = async (userId) => {
-  // Prevent duplicate intervals if the user logs in again while already polling
   if (activePolls.has(userId)) {
     clearInterval(activePolls.get(userId));
   }

@@ -15,7 +15,7 @@ MIME_TYPE_MAP = {
 
 KEYWORD_PATTERNS = {
     "Certificates": ["certificate", "cert", "appreciation", "award", "achievement", "completion"],
-    "Assignments": ["assignment", "pract", "practical", "lab", "homework", "submission"],
+    "Assignments": ["assignment", "pract", "prac", "practical", "lab", "homework", "submission"],
     "Notes": ["notes", "note", "lecture", "summary", "chapter", "unit"],
     "Documents": ["report", "resume", "cv", "letter", "proposal", "document", "doc"],
     "Archives": ["zip", "rar", "archive", "backup"],

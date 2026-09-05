@@ -16,7 +16,11 @@ const getDriveClient = (accessToken, refreshToken) => {
   return google.drive({ version: "v3", auth });
 };
 
-// Get or create a folder in Drive
+const NON_ORGANIZABLE_TYPES = [
+  "application/vnd.google-apps.folder",
+  "application/vnd.google-apps.shortcut",
+];
+
 export const getOrCreateFolder = async (drive, folderName, parentId = null) => {
   const query = parentId
     ? `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
@@ -37,7 +41,6 @@ export const getOrCreateFolder = async (drive, folderName, parentId = null) => {
   return folder.data.id;
 };
 
-// Move a file to a folder
 export const moveFile = async (drive, fileId, folderId) => {
   const file = await drive.files.get({ fileId, fields: "parents" });
   const previousParents = (file.data.parents || []).join(",");
@@ -50,7 +53,6 @@ export const moveFile = async (drive, fileId, folderId) => {
   });
 };
 
-// Classify file via ML service
 export const classifyFile = async (fileName, mimeType, userName = "") => {
   try {
     const response = await axios.post("http://localhost:8000/classify", {
@@ -70,11 +72,10 @@ export const classifyFile = async (fileName, mimeType, userName = "") => {
   }
 };
 
-// Main function — process a file (skips if already tracked)
 export const processNewFile = async (userId, fileId, fileName, mimeType) => {
   try {
     const existing = await FileAction.findOne({ fileId, userId });
-    if (existing) return null; // already have a record for this file
+    if (existing) return null;
 
     const user = await User.findById(userId);
     const classification = await classifyFile(
@@ -100,7 +101,6 @@ export const processNewFile = async (userId, fileId, fileName, mimeType) => {
   }
 };
 
-// Scan the user's entire Drive and queue anything not yet tracked
 export const scanExistingFiles = async (userId) => {
   const user = await User.findById(userId);
   const drive = getDriveClient(user.googleAccessToken, user.googleRefreshToken);
@@ -119,7 +119,7 @@ export const scanExistingFiles = async (userId) => {
     const files = response.data.files || [];
 
     for (const file of files) {
-      if (file.mimeType.startsWith("application/vnd.google-apps")) continue;
+      if (NON_ORGANIZABLE_TYPES.includes(file.mimeType)) continue;
 
       const action = await processNewFile(
         userId,
@@ -136,22 +136,21 @@ export const scanExistingFiles = async (userId) => {
   return queuedCount;
 };
 
-// Check every previously-organized file: does it actually sit in the
-// folder it should, given CURRENT classification logic?
 export const verifyOrganization = async (userId) => {
   const user = await User.findById(userId);
   const drive = getDriveClient(user.googleAccessToken, user.googleRefreshToken);
 
-  const confirmedActions = await FileAction.find({
+  const actions = await FileAction.find({
     userId,
-    status: "confirmed",
+    status: { $in: ["pending", "confirmed", "rejected"] },
   });
 
   let checked = 0;
   let misplacedCount = 0;
   let reclassifiedCount = 0;
+  let reconsideredCount = 0;
 
-  for (const action of confirmedActions) {
+  for (const action of actions) {
     try {
       const file = await drive.files.get({
         fileId: action.fileId,
@@ -163,32 +162,39 @@ export const verifyOrganization = async (userId) => {
         file.data.mimeType,
         user?.name || "",
       );
-
-      if (
+      const changed =
         classification.subject !== action.subject ||
-        classification.category !== action.category
-      ) {
+        classification.category !== action.category;
+
+      if (changed) {
         action.category = classification.category;
         action.subject = classification.subject || null;
         reclassifiedCount++;
       }
 
-      const parentId = (file.data.parents || [])[0];
-      let actualFolderName = null;
-      if (parentId) {
-        const folder = await drive.files.get({
-          fileId: parentId,
-          fields: "name",
-        });
-        actualFolderName = folder.data.name;
-      }
-
-      const expectedFolderName = action.subject || action.category;
       checked++;
 
-      if (actualFolderName !== expectedFolderName) {
-        action.status = "pending";
-        misplacedCount++;
+      if (action.status === "rejected") {
+        if (changed) {
+          action.status = "pending";
+          reconsideredCount++;
+        }
+      } else if (action.status === "confirmed") {
+        const parentId = (file.data.parents || [])[0];
+        let actualFolderName = null;
+        if (parentId) {
+          const folder = await drive.files.get({
+            fileId: parentId,
+            fields: "name",
+          });
+          actualFolderName = folder.data.name;
+        }
+
+        const expectedFolderName = action.subject || action.category;
+        if (actualFolderName !== expectedFolderName) {
+          action.status = "pending";
+          misplacedCount++;
+        }
       }
 
       await action.save();
@@ -197,10 +203,9 @@ export const verifyOrganization = async (userId) => {
     }
   }
 
-  return { checked, misplacedCount, reclassifiedCount };
+  return { checked, misplacedCount, reclassifiedCount, reconsideredCount };
 };
 
-// Execute confirmed move
 export const executeMove = async (userId, actionId) => {
   try {
     const user = await User.findById(userId);
