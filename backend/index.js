@@ -8,6 +8,7 @@ import categoryRoutes from "./routes/category.routes.js";
 import fileActionRoutes from "./routes/fileAction.routes.js";
 import User from "./models/User.js";
 import { startPolling } from "./services/polling.service.js";
+import driveTreeRoutes from "./routes/driveTree.routes.js";
 
 const app = express();
 app.use(cors());
@@ -36,5 +37,6 @@ const startServer = async () => {
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/files", fileActionRoutes);
+app.use("/api/tree", driveTreeRoutes);
 
 startServer();
