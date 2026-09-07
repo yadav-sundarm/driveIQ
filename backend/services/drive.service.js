@@ -99,6 +99,7 @@ export const classifyFile = async (
   mimeType,
   userName = "",
   knownSubjects = {},
+  userId = null,
 ) => {
   try {
     const response = await axios.post("http://localhost:8000/classify", {
@@ -106,6 +107,7 @@ export const classifyFile = async (
       mime_type: mimeType,
       user_name: userName,
       known_subjects: knownSubjects,
+      user_id: userId,
     });
     return response.data;
   } catch (error) {
@@ -119,14 +121,25 @@ export const classifyFile = async (
   }
 };
 
-// Look at the user's existing Drive folder structure and learn from it:
-// folders sitting directly inside another folder are treated as "subject"
-// folders (matching the Category/Subject shape DriveIQ itself creates),
-// and files already inside each one contribute keyword hints. Only run
-// from Scan/Verify — this does a full folder walk, too heavy for the
-// 2-minute background poll.
+// Sends a confirmed (category, subject) decision back to the ML service
+// so both the per-user TF-IDF model and the embedding index learn from
+// it — called after any successful move, whether it was a manual
+// confirm or an automatic one.
+export const sendTrainingSample = async (userId, action) => {
+  try {
+    await axios.post("http://localhost:8000/add-sample", {
+      user_id: userId.toString(),
+      file_name: action.fileName,
+      category: action.category,
+      subject: action.subject,
+    });
+  } catch (error) {
+    console.error("Failed to send training sample:", error.message);
+  }
+};
+
 export const discoverExistingOrganization = async (drive) => {
-  const folders = []; // { id, name, parentId }
+  const folders = [];
   let pageToken = null;
 
   do {
@@ -150,12 +163,10 @@ export const discoverExistingOrganization = async (drive) => {
 
   const folderIds = new Set(folders.map((f) => f.id));
 
-  // Top-level = parent is Drive's root, not another folder we tracked
   const topLevelFolders = folders.filter(
     (f) => !f.parentId || !folderIds.has(f.parentId),
   );
 
-  // Candidate "subject" folders = one level directly inside a top-level folder
   const subjectFolders = folders.filter(
     (f) => f.parentId && topLevelFolders.some((t) => t.id === f.parentId),
   );
@@ -183,8 +194,6 @@ export const discoverExistingOrganization = async (drive) => {
       filePageToken = filesRes.data.nextPageToken;
     } while (filePageToken);
 
-    // A keyword needs to show up more than once to count as a pattern —
-    // one stray word in a single filename isn't a reliable signal
     const learnedKeywords = Object.entries(keywordCounts)
       .filter(([, count]) => count > 1)
       .map(([kw]) => kw);
@@ -193,6 +202,29 @@ export const discoverExistingOrganization = async (drive) => {
   }
 
   return knownSubjects;
+};
+
+// Shared move logic — creates the category (and subject) folder and
+// re-parents the file. Returns the toFolder label. Used by both the
+// manual-confirm path and the new confidence-based auto-confirm path,
+// so a future fix to move logic only needs to happen in one place.
+const performDriveMove = async (drive, action) => {
+  const categoryFolderId = await getOrCreateFolder(drive, action.category);
+
+  let targetFolderId = categoryFolderId;
+  let toFolderLabel = action.category;
+
+  if (action.subject) {
+    targetFolderId = await getOrCreateFolder(
+      drive,
+      action.subject,
+      categoryFolderId,
+    );
+    toFolderLabel = `${action.category}/${action.subject}`;
+  }
+
+  await moveFile(drive, action.fileId, targetFolderId);
+  return toFolderLabel;
 };
 
 export const processNewFile = async (
@@ -208,7 +240,6 @@ export const processNewFile = async (
 
     const user = await User.findById(userId);
 
-    // Fetch user's custom categories and merge into knownSubjects
     const userCategories = await Category.find({ userId });
     const mergedSubjects = { ...knownSubjects };
     userCategories.forEach((cat) => {
@@ -220,7 +251,20 @@ export const processNewFile = async (
       mimeType,
       user?.name || "",
       mergedSubjects,
+      userId,
     );
+
+    const threshold = user?.confidenceThreshold ?? 0.8;
+
+    // Confidence routing: high enough -> auto-move; middling -> normal
+    // confirmation queue (existing behavior); low -> flag for the user
+    // to pick a category manually rather than trust a weak guess
+    let plannedStatus = "pending";
+    if (classification.confidence >= threshold) {
+      plannedStatus = "auto_confirmed";
+    } else if (classification.confidence < 0.5) {
+      plannedStatus = "needs_review";
+    }
 
     const action = await FileAction.create({
       userId,
@@ -229,8 +273,35 @@ export const processNewFile = async (
       category: classification.category,
       subject: classification.subject || null,
       confidence: classification.confidence,
-      status: "pending",
+      status: plannedStatus === "auto_confirmed" ? "pending" : plannedStatus,
     });
+
+    if (plannedStatus === "auto_confirmed") {
+      try {
+        const drive = getDriveClient(
+          user.googleAccessToken,
+          user.googleRefreshToken,
+        );
+        action.toFolder = await performDriveMove(drive, action);
+        action.status = "auto_confirmed";
+        await action.save();
+
+        await sendTrainingSample(userId, action);
+      } catch (moveError) {
+        if (moveError.message?.includes("Increasing the number of parents")) {
+          action.status = "failed";
+          action.failReason =
+            "File cannot be moved automatically — it may be shared or have multiple parents";
+        } else {
+          console.error(
+            "Auto-move failed, leaving pending:",
+            moveError.message,
+          );
+          action.status = "pending"; // fall back to a normal confirmation instead of losing the file action
+        }
+        await action.save();
+      }
+    }
 
     return action;
   } catch (error) {
@@ -274,6 +345,38 @@ export const scanExistingFiles = async (userId) => {
     pageToken = response.data.nextPageToken;
   } while (pageToken);
 
+  // Feed existing confirmed history into BOTH ongoing-learning models —
+  // embeddings (semantic similarity) and TF-IDF (per-category training)
+  // — so they have signal from before this upgrade existed, instead of
+  // only learning one file at a time from future confirms
+  try {
+    const confirmedActions = await FileAction.find({
+      userId,
+      status: { $in: ["confirmed", "auto_confirmed"] },
+    });
+
+    if (confirmedActions.length > 0) {
+      await axios.post("http://localhost:8000/embed-bulk", {
+        user_id: userId.toString(),
+        samples: confirmedActions.map((a) => ({
+          file_name: a.fileName,
+          category: a.category,
+          subject: a.subject,
+        })),
+      });
+
+      await axios.post("http://localhost:8000/train", {
+        user_id: userId.toString(),
+        samples: confirmedActions.map((a) => ({
+          file_name: a.fileName,
+          category: a.category,
+        })),
+      });
+    }
+  } catch (error) {
+    console.error("Bulk embed/train failed:", error.message);
+  }
+
   return queuedCount;
 };
 
@@ -285,7 +388,7 @@ export const verifyOrganization = async (userId) => {
 
   const actions = await FileAction.find({
     userId,
-    status: { $in: ["pending", "confirmed", "rejected"] },
+    status: { $in: ["pending", "confirmed", "auto_confirmed", "rejected"] },
   });
 
   let checked = 0;
@@ -305,6 +408,7 @@ export const verifyOrganization = async (userId) => {
         file.data.mimeType,
         user?.name || "",
         knownSubjects,
+        userId,
       );
       const changed =
         classification.subject !== action.subject ||
@@ -323,7 +427,10 @@ export const verifyOrganization = async (userId) => {
           action.status = "pending";
           reconsideredCount++;
         }
-      } else if (action.status === "confirmed") {
+      } else if (
+        action.status === "confirmed" ||
+        action.status === "auto_confirmed"
+      ) {
         const parentId = (file.data.parents || [])[0];
         let actualFolderName = null;
         if (parentId) {
@@ -359,23 +466,7 @@ export const executeMove = async (userId, actionId) => {
     );
     const action = await FileAction.findById(actionId);
 
-    const categoryFolderId = await getOrCreateFolder(drive, action.category);
-
-    let targetFolderId = categoryFolderId;
-    let toFolderLabel = action.category;
-
-    if (action.subject) {
-      targetFolderId = await getOrCreateFolder(
-        drive,
-        action.subject,
-        categoryFolderId,
-      );
-      toFolderLabel = `${action.category}/${action.subject}`;
-    }
-
-    await moveFile(drive, action.fileId, targetFolderId);
-
-    action.toFolder = toFolderLabel;
+    action.toFolder = await performDriveMove(drive, action);
     action.status = "confirmed";
     await action.save();
 

@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema(
       enum: ["email", "app", "both"],
       default: "both",
     },
+    confidenceThreshold: { type: Number, default: 0.8, min: 0, max: 1 },
   },
   { timestamps: true },
 );

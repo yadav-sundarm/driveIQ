@@ -2,6 +2,9 @@ import re
 from difflib import SequenceMatcher
 import spacy
 
+import tfidf_classifier
+import embedder
+
 nlp = spacy.load("en_core_web_sm")
 
 MIME_TYPE_MAP = {
@@ -32,12 +35,19 @@ STOPWORDS = {
     "th", "st", "nd", "rd", "no", "vs",
 }
 
+# Ensemble weights — sum to 1.0
+RULE_WEIGHT = 0.4
+TFIDF_WEIGHT = 0.4
+EMBEDDING_WEIGHT = 0.2
+
+
 def extract_keywords_from_name(file_name: str) -> list:
     name_without_ext = re.sub(r'\.[^.]+$', '', file_name).lower()
     name_cleaned = re.sub(r'[_\-]', ' ', name_without_ext)
     doc = nlp(name_cleaned)
     keywords = [token.lemma_.lower() for token in doc if not token.is_stop and not token.is_punct]
     return keywords
+
 
 def classify_by_keywords(keywords: list) -> tuple:
     scores = {}
@@ -53,6 +63,7 @@ def classify_by_keywords(keywords: list) -> tuple:
     confidence = min(scores[best_category] / 3, 1.0)
     return best_category, round(confidence, 2)
 
+
 def is_name_match(token: str, name_parts: list) -> bool:
     token_lower = token.lower()
     for part in name_parts:
@@ -62,9 +73,8 @@ def is_name_match(token: str, name_parts: list) -> bool:
             return True
     return False
 
+
 def extract_subject_fallback(file_name: str, user_name: str = ""):
-    """Elimination-based guess — used only when nothing in the user's
-    existing Drive organization gives a better answer."""
     name_without_ext = re.sub(r'\.[^.]+$', '', file_name)
     raw_tokens = [t for t in re.split(r'[_\-\s]+', name_without_ext) if t]
     name_parts = [p.lower() for p in re.split(r'\s+', user_name) if p]
@@ -92,16 +102,8 @@ def extract_subject_fallback(file_name: str, user_name: str = ""):
 
     return candidates[0].upper()
 
+
 def extract_subject(file_name: str, user_name: str = "", known_subjects: dict = None):
-    """
-    Subject detection, in priority order:
-    1. A filename token exactly matches an existing subject folder's
-       name in the user's Drive — the strongest signal, since they
-       organized it themselves.
-    2. A filename token matches a keyword already seen in files sitting
-       inside that existing folder.
-    3. Fall back to elimination-based guessing.
-    """
     known_subjects = known_subjects or {}
     name_without_ext = re.sub(r'\.[^.]+$', '', file_name)
     raw_tokens = [t for t in re.split(r'[_\-\s]+', name_without_ext) if t]
@@ -123,9 +125,68 @@ def extract_subject(file_name: str, user_name: str = "", known_subjects: dict = 
 
     return extract_subject_fallback(file_name, user_name)
 
-def classify_file(file_name: str, mime_type: str, user_name: str = "", known_subjects: dict = None) -> dict:
+
+def _ensemble_category(file_name: str, keywords: list, user_id: str = None):
+    """
+    Blends three signals:
+    - rule-based keyword matching (always available)
+    - per-user TF-IDF+NaiveBayes on confirmed history (None until enough data)
+    - per-user embedding similarity to past confirmed files (None until any data)
+
+    Each available model casts a weighted vote for ITS predicted category.
+    Confidence is normalized against the weight actually available, not
+    a fixed total — so a brand-new user running rule-based alone gets
+    back exactly the rule-based confidence, rather than an artificially
+    deflated score just because the other two haven't seen data yet.
+    As TF-IDF/embeddings come online and agree with the rules, confidence
+    on agreed categories climbs toward auto-confirm territory; when they
+    disagree, the vote splits and confidence correctly drops.
+    """
+    rule_category, rule_confidence = classify_by_keywords(keywords)
+
+    tfidf_result = tfidf_classifier.predict(user_id, file_name) if user_id else None
+
+    embedding_result = None
+    if user_id:
+        matches = embedder.find_similar(user_id, file_name, top_k=1)
+        if matches:
+            embedding_result = matches[0]
+
+    votes = {}
+    available_weight = 0.0
+
+    votes[rule_category] = votes.get(rule_category, 0.0) + RULE_WEIGHT * rule_confidence
+    available_weight += RULE_WEIGHT
+
+    if tfidf_result:
+        votes[tfidf_result["category"]] = (
+            votes.get(tfidf_result["category"], 0.0)
+            + TFIDF_WEIGHT * tfidf_result["confidence"]
+        )
+        available_weight += TFIDF_WEIGHT
+
+    if embedding_result:
+        votes[embedding_result["category"]] = (
+            votes.get(embedding_result["category"], 0.0)
+            + EMBEDDING_WEIGHT * embedding_result["score"]
+        )
+        available_weight += EMBEDDING_WEIGHT
+
+    best_category = max(votes, key=votes.get)
+    confidence = votes[best_category] / available_weight if available_weight > 0 else 0.0
+
+    return best_category, round(min(confidence, 1.0), 2)
+
+
+def classify_file(
+    file_name: str,
+    mime_type: str,
+    user_name: str = "",
+    known_subjects: dict = None,
+    user_id: str = None,
+) -> dict:
     keywords = extract_keywords_from_name(file_name)
-    category, confidence = classify_by_keywords(keywords)
+    category, confidence = _ensemble_category(file_name, keywords, user_id)
 
     file_type = MIME_TYPE_MAP.get(mime_type, "other")
 

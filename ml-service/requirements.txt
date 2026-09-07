@@ -7,3 +7,5 @@ python-docx
 pillow
 easyocr
 python-multipart
+sentence-transformers
+numpy

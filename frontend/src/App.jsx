@@ -8,6 +8,8 @@ import Categories from './pages/Categories'
 import History from './pages/History'
 import ProtectedRoute from './components/ProtectedRoute'
 import DriveTree from './pages/DriveTree'
+import Settings from './pages/Settings'
+import NeedsReview from './pages/NeedsReview'
 
 const TokenHandler = () => {
   const [searchParams] = useSearchParams()
@@ -45,6 +47,12 @@ function App() {
         } />
         <Route path="/drive" element={
           <ProtectedRoute><Layout><DriveTree /></Layout></ProtectedRoute>
+        } />
+        <Route path="/needs-review" element={
+          <ProtectedRoute><Layout><NeedsReview /></Layout></ProtectedRoute>
+        } />
+        <Route path="/settings" element={
+          <ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>
         } />
       </Routes>
     </Router>

@@ -9,6 +9,7 @@ import fileActionRoutes from "./routes/fileAction.routes.js";
 import User from "./models/User.js";
 import { startPolling } from "./services/polling.service.js";
 import driveTreeRoutes from "./routes/driveTree.routes.js";
+import userRoutes from "./routes/user.routes.js";
 
 const app = express();
 app.use(cors());
@@ -20,7 +21,6 @@ const startServer = async () => {
   try {
     await connectDB();
 
-    // Resume polling for every already-authenticated user on boot
     const usersWithDrive = await User.find({
       googleRefreshToken: { $exists: true, $ne: null },
     });
@@ -38,5 +38,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/files", fileActionRoutes);
 app.use("/api/tree", driveTreeRoutes);
+app.use("/api/users", userRoutes);
 
 startServer();

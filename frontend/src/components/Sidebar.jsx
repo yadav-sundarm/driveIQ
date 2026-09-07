@@ -3,9 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom'
 const links = [
     { label: 'Dashboard', path: '/dashboard' },
     { label: 'Confirmations', path: '/confirmations' },
+    { label: 'Needs Review', path: '/needs-review' },
     { label: 'Categories', path: '/categories' },
     { label: 'History', path: '/history' },
     { label: 'Drive Explorer', path: '/drive' },
+    { label: 'Settings', path: '/settings' },
 ]
 
 const Sidebar = () => {

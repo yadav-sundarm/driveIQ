@@ -15,8 +15,13 @@ export const getPendingActions = async () => {
   return response.data;
 };
 
-export const confirmAction = async (id) => {
-  const response = await api.patch(`/files/${id}/confirm`);
+export const getNeedsReview = async () => {
+  const response = await api.get("/files/needs-review");
+  return response.data;
+};
+
+export const confirmAction = async (id, overrides = {}) => {
+  const response = await api.patch(`/files/${id}/confirm`, overrides);
   return response.data;
 };
 
