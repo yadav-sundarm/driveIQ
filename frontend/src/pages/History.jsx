@@ -33,9 +33,15 @@ const History = () => {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="font-medium text-gray-900">{action.fileName}</p>
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        Moved to → <span className="text-indigo-600">{action.category}</span>
-                                    </p>
+                                    {action.status === 'failed' ? (
+                                        <p className="text-sm text-amber-700 mt-1">
+                                            {action.failReason || 'Could not be moved automatically'}
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            Moved to → <span className="text-indigo-600">{action.category}</span>
+                                        </p>
+                                    )}
                                     <p className="text-xs text-gray-400 mt-1">
                                         {new Date(action.createdAt).toLocaleDateString('en-IN', {
                                             day: 'numeric', month: 'short', year: 'numeric',
@@ -44,7 +50,9 @@ const History = () => {
                                     </p>
                                 </div>
                                 <span className={`text-xs px-3 py-1 rounded-full font-medium ${action.status === 'confirmed'
-                                        ? 'bg-green-50 text-green-700'
+                                    ? 'bg-green-50 text-green-700'
+                                    : action.status === 'failed'
+                                        ? 'bg-amber-50 text-amber-700'
                                         : 'bg-red-50 text-red-700'
                                     }`}>
                                     {action.status}

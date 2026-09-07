@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { getChildren, refreshNode, createFolder, deleteNode, renameNode } from '../services/driveTree.services'
+import { useState, useEffect } from 'react'
+import { getChildren, refreshNode, createFolder, deleteNode, renameNode, moveNode } from '../services/driveTree.services'
 
 const getFileIcon = (mimeType) => {
     if (mimeType === 'application/vnd.google-apps.folder') return '📁'
@@ -25,8 +25,24 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
     const [creatingFolder, setCreatingFolder] = useState(false)
     const [newFolderName, setNewFolderName] = useState('')
     const [hovered, setHovered] = useState(false)
+    const [dragOver, setDragOver] = useState(false)
 
     const folder = isFolder(node.mimeType)
+
+    // A drop somewhere else in the tree moved one of our children away —
+    // prune it locally. No-op if we're collapsed or don't have it; if
+    // we're expanded and did, this is what makes it disappear from here
+    // without needing a manual refresh.
+    useEffect(() => {
+        const handleMoved = (e) => {
+            const { nodeId: movedId, oldParentId } = e.detail
+            if (oldParentId === node.nodeId) {
+                setChildren(prev => prev.filter(c => c.nodeId !== movedId))
+            }
+        }
+        window.addEventListener('drive-node-moved', handleMoved)
+        return () => window.removeEventListener('drive-node-moved', handleMoved)
+    }, [node.nodeId])
 
     const handleExpand = async () => {
         if (!folder) return
@@ -80,6 +96,53 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
 
     const handleChildDelete = (id) => setChildren(prev => prev.filter(c => c.nodeId !== id))
 
+    const handleDragStart = (e) => {
+        e.stopPropagation()
+        e.dataTransfer.setData('text/plain', node.nodeId)
+        e.dataTransfer.setData('application/x-old-parent', node.parentId || '')
+        e.dataTransfer.effectAllowed = 'move'
+    }
+
+    const handleDragOver = (e) => {
+        if (!folder) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'move'
+    }
+
+    const handleDragEnter = (e) => {
+        if (!folder) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDragOver(true)
+    }
+
+    const handleDragLeave = () => setDragOver(false)
+
+    const handleDrop = async (e) => {
+        if (!folder) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDragOver(false)
+        const draggedId = e.dataTransfer.getData('text/plain')
+        const oldParentId = e.dataTransfer.getData('application/x-old-parent')
+        if (!draggedId || draggedId === node.nodeId) return
+        try {
+            await moveNode(draggedId, node.nodeId)
+            window.dispatchEvent(new CustomEvent('drive-node-moved', {
+                detail: { nodeId: draggedId, oldParentId, newParentId: node.nodeId }
+            }))
+            // The cache is already updated server-side, so a normal
+            // (cache-hitting) re-fetch is enough to pick up the new child.
+            if (expanded) {
+                const data = await getChildren(node.nodeId)
+                setChildren(data.children)
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || 'Could not move that item.')
+        }
+    }
+
     return (
         <div style={{ position: 'relative', paddingLeft: '20px' }}>
 
@@ -105,6 +168,12 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
 
             {/* Node row */}
             <div
+                draggable={!editing}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
                 onMouseEnter={() => setHovered(true)}
                 onMouseLeave={() => setHovered(false)}
                 onClick={handleExpand}
@@ -115,7 +184,8 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
                     padding: '3px 6px',
                     borderRadius: '4px',
                     cursor: folder ? 'pointer' : 'default',
-                    background: hovered ? '#1f2937' : 'transparent',
+                    background: dragOver ? 'rgba(79, 70, 229, 0.25)' : hovered ? '#1f2937' : 'transparent',
+                    outline: dragOver ? '1px solid #4f46e5' : 'none',
                     minHeight: '28px'
                 }}
             >

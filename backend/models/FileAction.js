@@ -15,9 +15,10 @@ const fileActionSchema = new mongoose.Schema(
     subject: { type: String },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "rejected"],
+      enum: ["pending", "confirmed", "rejected", "failed"],
       default: "pending",
     },
+    failReason: { type: String },
     confidence: { type: Number },
   },
   { timestamps: true },

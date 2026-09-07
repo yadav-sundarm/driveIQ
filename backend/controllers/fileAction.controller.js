@@ -64,7 +64,7 @@ export const getFileHistory = async (req, res) => {
   try {
     const actions = await FileAction.find({
       userId: req.user.id,
-      status: { $in: ["confirmed", "rejected"] },
+      status: { $in: ["confirmed", "rejected", "failed"] },
     })
       .sort({ createdAt: -1 })
       .limit(50);

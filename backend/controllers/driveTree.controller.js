@@ -1,19 +1,21 @@
 import DriveNode from "../models/DriveNode.js";
 import User from "../models/User.js";
-import { google } from "googleapis";
 import FileAction from "../models/FileAction.js";
+import { getDriveClient, moveFile } from "../services/drive.service.js";
 
-const getDriveClient = (accessToken, refreshToken) => {
-  const auth = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI,
-  );
-  auth.setCredentials({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
-  return google.drive({ version: "v3", auth });
+// Walk parentId links upward from newParentId looking for nodeId — if we
+// find it, newParentId is (or is inside) one of nodeId's own subfolders,
+// which would create a cycle. Capped depth as a guard against bad data.
+const wouldCreateCycle = async (userId, nodeId, newParentId) => {
+  let currentId = newParentId;
+  let depth = 0;
+  while (currentId && depth < 100) {
+    if (currentId === nodeId) return true;
+    const current = await DriveNode.findOne({ userId, nodeId: currentId });
+    currentId = current?.parentId;
+    depth++;
+  }
+  return false;
 };
 
 // Get or fetch children of a node
@@ -81,7 +83,7 @@ export const getNodeChildren = async (req, res) => {
         nodeId,
         name: nodeId === "root" ? "My Drive" : cached?.name || "Folder",
         mimeType: "application/vnd.google-apps.folder",
-        parentId: null,
+        parentId: nodeId === "root" ? null : (cached?.parentId ?? null),
         children: childIds,
         isLoaded: true,
         lastFetched: new Date(),
@@ -176,8 +178,12 @@ export const deleteNode = async (req, res) => {
       user.googleRefreshToken,
     );
 
-    // Delete from Drive (moves to trash)
-    await drive.files.delete({ fileId: nodeId });
+    // Move to Drive's Trash — reversible, matches what Drive's own UI
+    // calls "delete". files.delete() would be a *permanent* delete instead.
+    await drive.files.update({
+      fileId: nodeId,
+      requestBody: { trashed: true },
+    });
 
     // Remove from DB
     const node = await DriveNode.findOneAndDelete({ userId, nodeId });
@@ -225,6 +231,76 @@ export const renameNode = async (req, res) => {
 
     res.status(200).json({ message: "Renamed successfully" });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const moveNode = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { nodeId } = req.params;
+    const { newParentId } = req.body;
+
+    if (!newParentId) {
+      return res.status(400).json({ message: "newParentId is required" });
+    }
+    if (newParentId === nodeId) {
+      return res
+        .status(400)
+        .json({ message: "Can't move an item into itself" });
+    }
+    if (await wouldCreateCycle(userId, nodeId, newParentId)) {
+      return res.status(400).json({
+        message: "Can't move a folder into one of its own subfolders",
+      });
+    }
+
+    const user = await User.findById(userId);
+    const drive = getDriveClient(
+      user.googleAccessToken,
+      user.googleRefreshToken,
+    );
+
+    // Read the cache's current understanding of the parent *before*
+    // moving, so we know which old-parent children array to pull from.
+    const node = await DriveNode.findOne({ userId, nodeId });
+    const oldParentId = node?.parentId;
+
+    // Reuses the same moveFile() executeMove() already relies on for
+    // confirmed suggestions, so both paths handle the parents swap (and
+    // the same "multiple parents" Drive error) identically.
+    await moveFile(drive, nodeId, newParentId);
+
+    await DriveNode.findOneAndUpdate(
+      { userId, nodeId },
+      { parentId: newParentId },
+    );
+
+    if (oldParentId) {
+      await DriveNode.findOneAndUpdate(
+        { userId, nodeId: oldParentId },
+        { $pull: { children: nodeId } },
+      );
+    }
+
+    // $addToSet, not $push — if the destination was never cached this is a
+    // no-op (findOneAndUpdate on a non-existent doc just matches nothing),
+    // and it won't double-add if this node is somehow already listed.
+    await DriveNode.findOneAndUpdate(
+      { userId, nodeId: newParentId },
+      { $addToSet: { children: nodeId } },
+    );
+
+    res.status(200).json({ message: "Moved" });
+  } catch (error) {
+    // Same graceful handling confirmAction() already uses for this case.
+    if (error.message?.includes("Increasing the number of parents")) {
+      return res.status(422).json({
+        message:
+          "This item can't be moved automatically — it may be shared with you and have multiple parents you don't fully own.",
+        code: "UNMOVABLE_FILE",
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };

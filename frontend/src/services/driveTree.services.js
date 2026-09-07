@@ -34,3 +34,8 @@ export const renameNode = async (nodeId, name) => {
   const response = await api.patch(`/${nodeId}/rename`, { name });
   return response.data;
 };
+
+export const moveNode = async (nodeId, newParentId) => {
+  const response = await api.patch(`/${nodeId}/move`, { newParentId });
+  return response.data;
+};

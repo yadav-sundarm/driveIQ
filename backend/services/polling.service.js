@@ -1,24 +1,10 @@
-import { google } from "googleapis";
 import User from "../models/User.js";
 import FileAction from "../models/FileAction.js";
-import { processNewFile } from "./drive.service.js";
+import { processNewFile, getDriveClient } from "./drive.service.js";
 import { sendNotificationEmail } from "./notification.service.js";
 
 const processedFiles = new Set();
 const activePolls = new Map();
-
-const getDriveClient = (accessToken, refreshToken) => {
-  const auth = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI,
-  );
-  auth.setCredentials({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
-  return google.drive({ version: "v3", auth });
-};
 
 // Only real, movable items skip these two — everything else (uploaded
 // files AND native Google Docs/Sheets/Slides) is fair game
