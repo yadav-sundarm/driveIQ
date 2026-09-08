@@ -54,6 +54,12 @@ def train_endpoint(request: TrainRequest):
     trained = tfidf_classifier.train(request.user_id, request.samples)
     return {"trained": trained}
 
+@app.get("/training-status/{user_id}")
+def training_status_endpoint(user_id: str):
+    """Explains WHY the TF-IDF model has/hasn't trained for this user —
+    e.g. only one category confirmed so far — instead of leaving it a
+    silent black box. Cheap to call (reads training_data.json only)."""
+    return tfidf_classifier.training_status(user_id)
 
 @app.post("/embed-bulk")
 def embed_bulk_endpoint(request: EmbedBulkRequest):
