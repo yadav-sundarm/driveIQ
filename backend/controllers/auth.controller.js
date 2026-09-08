@@ -50,6 +50,10 @@ export const googleCallback = async (req, res) => {
     } else {
       user.googleAccessToken = tokens.access_token;
       if (tokens.refresh_token) user.googleRefreshToken = tokens.refresh_token;
+      // Backfills avatar/name for accounts created before this field
+      // existed, and keeps both in sync if they change on Google's side
+      user.avatar = data.picture;
+      user.name = data.name;
       await user.save();
     }
 
