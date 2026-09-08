@@ -57,12 +57,6 @@ def _prepare_text(file_name: str) -> str:
 
 
 def _prepare_training_set(samples: list):
-    """Categories with fewer than MIN_SAMPLES_PER_CATEGORY confirmed
-    files get folded into a single OTHER_LABEL bucket instead of being
-    excluded outright. This means the model can start training as soon
-    as just ONE category has enough data (that category vs. everything
-    else), rather than needing two separate categories to each cross
-    the threshold before anything happens."""
     counts = Counter(s["category"] for s in samples)
     eligible_categories = {
         c for c, n in counts.items() if n >= MIN_SAMPLES_PER_CATEGORY
@@ -73,14 +67,27 @@ def _prepare_training_set(samples: list):
 
     texts = []
     labels = []
+    has_other = False
+
     for s in samples:
         texts.append(_prepare_text(s["file_name"]))
-        labels.append(
-            s["category"] if s["category"] in eligible_categories else OTHER_LABEL
-        )
+        if s["category"] in eligible_categories:
+            labels.append(s["category"])
+        else:
+            labels.append(OTHER_LABEL)
+            has_other = True
+
+    # If only one eligible category exists and no below-threshold samples
+    # are available to populate __other__, synthesize one neutral negative
+    # (empty string → all-zero TF-IDF vector, matches nothing real) so
+    # sklearn can train a binary one-vs-rest classifier instead of bailing.
+    # Without this, early users who confirm 5+ files all in the same
+    # category get silently zero TF-IDF contribution.
+    if len(eligible_categories) == 1 and not has_other:
+        texts.append("")
+        labels.append(OTHER_LABEL)
 
     return texts, labels
-
 
 def train(user_id: str, samples: list) -> bool:
     """samples = [{"file_name": ..., "category": ...}] — replaces
