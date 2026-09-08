@@ -34,7 +34,7 @@ const Dashboard = () => {
                 ])
                 setStats({
                     pending: pending.length,
-                    organized: history.filter(a => a.status === 'confirmed').length,
+                    organized: history.filter(a => a.status === 'confirmed' || a.status === 'auto_confirmed').length,
                     categories: categories.length
                 })
             } catch (error) {

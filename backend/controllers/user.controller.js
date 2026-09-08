@@ -1,4 +1,21 @@
 import User from "../models/User.js";
+import axios from "axios";
+
+export const getTrainingStatus = async (req, res) => {
+  try {
+    const response = await axios.get(
+      `http://localhost:8000/training-status/${req.user.id}`,
+    );
+    res.status(200).json(response.data);
+  } catch (error) {
+    // ML service might be down — return a safe default
+    res.status(200).json({
+      trained: false,
+      reason: "ml_service_unavailable",
+      detail: "ML service is not reachable.",
+    });
+  }
+};
 
 export const getThreshold = async (req, res) => {
   try {
@@ -20,11 +37,9 @@ export const updateThreshold = async (req, res) => {
       confidenceThreshold < 0 ||
       confidenceThreshold > 1
     ) {
-      return res
-        .status(400)
-        .json({
-          message: "confidenceThreshold must be a number between 0 and 1",
-        });
+      return res.status(400).json({
+        message: "confidenceThreshold must be a number between 0 and 1",
+      });
     }
 
     const user = await User.findByIdAndUpdate(

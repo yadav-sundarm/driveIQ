@@ -29,10 +29,6 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
 
     const folder = isFolder(node.mimeType)
 
-    // A drop somewhere else in the tree moved one of our children away —
-    // prune it locally. No-op if we're collapsed or don't have it; if
-    // we're expanded and did, this is what makes it disappear from here
-    // without needing a manual refresh.
     useEffect(() => {
         const handleMoved = (e) => {
             const { nodeId: movedId, oldParentId } = e.detail
@@ -132,8 +128,6 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
             window.dispatchEvent(new CustomEvent('drive-node-moved', {
                 detail: { nodeId: draggedId, oldParentId, newParentId: node.nodeId }
             }))
-            // The cache is already updated server-side, so a normal
-            // (cache-hitting) re-fetch is enough to pick up the new child.
             if (expanded) {
                 const data = await getChildren(node.nodeId)
                 setChildren(data.children)
@@ -146,27 +140,24 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
     return (
         <div style={{ position: 'relative', paddingLeft: '20px' }}>
 
-            {/* Vertical line from parent */}
             <div style={{
                 position: 'absolute',
                 left: '8px',
                 top: 0,
                 bottom: isLast ? '14px' : 0,
                 width: '1px',
-                background: '#374151'
+                background: '#334155'
             }} />
 
-            {/* Horizontal line to node */}
             <div style={{
                 position: 'absolute',
                 left: '8px',
                 top: '14px',
                 width: '12px',
                 height: '1px',
-                background: '#374151'
+                background: '#334155'
             }} />
 
-            {/* Node row */}
             <div
                 draggable={!editing}
                 onDragStart={handleDragStart}
@@ -184,22 +175,19 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
                     padding: '3px 6px',
                     borderRadius: '4px',
                     cursor: folder ? 'pointer' : 'default',
-                    background: dragOver ? 'rgba(79, 70, 229, 0.25)' : hovered ? '#1f2937' : 'transparent',
-                    outline: dragOver ? '1px solid #4f46e5' : 'none',
+                    background: dragOver ? 'rgba(20, 184, 166, 0.25)' : hovered ? '#1e293b' : 'transparent',
+                    outline: dragOver ? '1px solid #0d9488' : 'none',
                     minHeight: '28px'
                 }}
             >
-                {/* Expand arrow */}
-                <span style={{ width: '12px', color: '#9ca3af', fontSize: '10px', flexShrink: 0 }}>
+                <span style={{ width: '12px', color: '#94a3b8', fontSize: '10px', flexShrink: 0 }}>
                     {folder ? (loading ? '⋯' : expanded ? '▼' : '▶') : ''}
                 </span>
 
-                {/* Icon */}
                 <span style={{ fontSize: '15px', flexShrink: 0 }}>
                     {folder ? (expanded ? '📂' : '📁') : getFileIcon(node.mimeType)}
                 </span>
 
-                {/* Name */}
                 {editing ? (
                     <input
                         autoFocus
@@ -209,10 +197,10 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
                         onBlur={handleRename}
                         onKeyDown={e => e.key === 'Enter' && handleRename()}
                         style={{
-                            background: '#111827',
-                            border: '1px solid #4f46e5',
+                            background: '#020617',
+                            border: '1px solid #0d9488',
                             borderRadius: '4px',
-                            color: '#f9fafb',
+                            color: '#f1f5f9',
                             fontSize: '13px',
                             padding: '1px 6px',
                             width: '160px',
@@ -222,33 +210,31 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
                 ) : (
                     <span
                         onDoubleClick={e => { e.stopPropagation(); setEditing(true) }}
-                        style={{ fontSize: '13px', color: '#f3f4f6', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        style={{ fontSize: '13px', color: '#f1f5f9', flexGrow: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                     >
                         {node.name}
                     </span>
                 )}
 
-                {/* Actions — only on hover */}
                 {hovered && (
                     <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                         {folder && (
                             <>
                                 <button onClick={e => { e.stopPropagation(); setCreatingFolder(true); if (!expanded) handleExpand() }}
                                     title="New folder"
-                                    style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px', padding: '0 3px' }}>＋</button>
+                                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '14px', padding: '0 3px' }}>＋</button>
                                 <button onClick={handleRefresh}
                                     title="Refresh"
-                                    style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', padding: '0 3px' }}>↻</button>
+                                    style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '13px', padding: '0 3px' }}>↻</button>
                             </>
                         )}
                         <button onClick={handleDelete}
                             title="Delete"
-                            style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', padding: '0 3px' }}>✕</button>
+                            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '13px', padding: '0 3px' }}>✕</button>
                     </div>
                 )}
             </div>
 
-            {/* New folder input */}
             {creatingFolder && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '32px', paddingBottom: '4px' }}>
                     <span>📁</span>
@@ -260,22 +246,21 @@ const TreeNode = ({ node, onDelete, isLast = false }) => {
                         onBlur={() => { if (!newFolderName.trim()) setCreatingFolder(false) }}
                         placeholder="Folder name"
                         style={{
-                            background: '#111827', border: '1px solid #4f46e5', borderRadius: '4px',
-                            color: '#f9fafb', fontSize: '13px', padding: '2px 8px', width: '150px', outline: 'none'
+                            background: '#020617', border: '1px solid #0d9488', borderRadius: '4px',
+                            color: '#f1f5f9', fontSize: '13px', padding: '2px 8px', width: '150px', outline: 'none'
                         }}
                     />
                     <button onClick={handleCreateFolder}
-                        style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 10px', fontSize: '12px', cursor: 'pointer' }}>
+                        style={{ background: '#0d9488', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 10px', fontSize: '12px', cursor: 'pointer' }}>
                         Create
                     </button>
                 </div>
             )}
 
-            {/* Children */}
             {expanded && (
                 <div>
                     {children.length === 0 ? (
-                        <div style={{ paddingLeft: '20px', fontSize: '12px', color: '#6b7280', padding: '4px 0 4px 32px' }}>
+                        <div style={{ paddingLeft: '20px', fontSize: '12px', color: '#64748b', padding: '4px 0 4px 32px' }}>
                             Empty folder
                         </div>
                     ) : (

@@ -37,39 +37,41 @@ const Confirmations = () => {
         }
     }
 
-    if (loading) return <p>Loading...</p>
+    if (loading) return <p className="text-slate-500 font-mono text-sm">loading...</p>
 
     return (
-        <div className="min-h-screen bg-gray-50 p-8">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">Pending Confirmations</h1>
+        <div className="min-h-screen bg-slate-950">
+            <h1 className="text-lg font-medium text-slate-100 mb-6">
+                pending confirmations <span className="text-slate-500 font-mono text-sm">// {actions.length}</span>
+            </h1>
             {actions.length === 0 ? (
-                <p className="text-gray-500">No pending actions. Your Drive is organized!</p>
+                <p className="text-slate-500 text-sm">No pending actions. Your Drive is organized.</p>
             ) : (
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3">
                     {actions.map(action => (
-                        <div key={action._id} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <div key={action._id} className="bg-slate-900 border border-slate-800 rounded p-4">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="font-medium text-gray-900">{action.fileName}</p>
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        Move to → <span className="text-indigo-600 font-medium">
+                                    <p className="font-mono text-sm text-slate-100">{action.fileName}</p>
+                                    <p className="text-sm text-slate-500 mt-1">
+                                        -&gt; <span className="text-teal-400">
                                             {action.category}{action.subject ? ` / ${action.subject}` : ''}
                                         </span>
-                                        <span className="ml-3 text-xs text-gray-400">
-                                            Confidence: {Math.round(action.confidence * 100)}%
+                                        <span className="ml-3 font-mono text-xs text-slate-500">
+                                            [{Math.round(action.confidence * 100) / 100}]
                                         </span>
                                     </p>
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex gap-2">
                                     <button
                                         onClick={() => handleConfirm(action._id)}
-                                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700 transition"
+                                        className="border border-teal-700 text-teal-400 px-4 py-2 rounded text-sm hover:bg-teal-950/50 transition"
                                     >
                                         Confirm
                                     </button>
                                     <button
                                         onClick={() => handleReject(action._id)}
-                                        className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition"
+                                        className="border border-red-800 text-red-400 px-4 py-2 rounded text-sm hover:bg-red-950/50 transition"
                                     >
                                         Reject
                                     </button>

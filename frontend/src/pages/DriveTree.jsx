@@ -62,16 +62,16 @@ const DriveTree = () => {
 
     if (loading) return (
         <div className="p-8">
-            <p className="text-gray-500">Loading your Drive...</p>
+            <p className="text-slate-500 font-mono text-sm">Loading your Drive...</p>
         </div>
     )
 
     return (
-        <div className="min-h-screen bg-gray-50 p-8">
+        <div className="min-h-screen bg-slate-950">
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Drive Explorer</h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h1 className="text-lg font-medium text-slate-100">drive explorer</h1>
+                    <p className="text-sm text-slate-500 mt-1">
                         Click folders to expand. Double-click to rename. Hover for actions.
                     </p>
                 </div>
@@ -83,15 +83,15 @@ const DriveTree = () => {
                 onDragLeave={handleRootDragLeave}
                 onDrop={handleRootDrop}
                 style={{
-                    background: '#111827',
-                    borderRadius: '12px',
+                    background: '#0f172a',
+                    borderRadius: '8px',
                     padding: '16px',
-                    border: dragOver ? '1px solid #4f46e5' : '1px solid #1f2937',
+                    border: dragOver ? '1px solid #0d9488' : '1px solid #1e293b',
                 }}
             >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #1f2937' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #1e293b' }}>
                     <span>🗂️</span>
-                    <span style={{ fontWeight: 600, color: '#f3f4f6', fontSize: '14px' }}>My Drive</span>
+                    <span style={{ fontWeight: 500, color: '#f1f5f9', fontSize: '14px', fontFamily: 'monospace' }}>My Drive</span>
                 </div>
                 <div style={{ position: 'relative', paddingLeft: '8px' }}>
                     {roots.map((node, index) => (

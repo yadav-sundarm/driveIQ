@@ -11,18 +11,18 @@ const Navbar = () => {
     }
 
     return (
-        <div className="bg-white border-b border-gray-100 px-8 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-indigo-600">DriveIQ</h1>
+        <div className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex items-center justify-between">
+            <h1 className="text-lg font-mono font-medium text-teal-400">DriveIQ</h1>
             <div className="flex items-center gap-4">
                 <img
                     src={user?.avatar}
                     alt={user?.name}
-                    className="w-8 h-8 rounded-full"
+                    className="w-8 h-8 rounded-full border border-slate-700"
                 />
-                <span className="text-sm text-gray-700">{user?.name}</span>
+                <span className="text-sm text-slate-300">{user?.name}</span>
                 <button
                     onClick={handleLogout}
-                    className="text-sm text-gray-500 hover:text-gray-700 transition"
+                    className="text-sm text-slate-500 hover:text-slate-300 transition"
                 >
                     Logout
                 </button>

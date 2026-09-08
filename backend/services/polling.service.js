@@ -21,7 +21,7 @@ export const pollOnce = async (userId) => {
 
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   const response = await drive.files.list({
-    q: `modifiedTime > '${fiveMinutesAgo}' and trashed=false`,
+    q: `'me' in owners and modifiedTime > '${fiveMinutesAgo}' and trashed=false`,
     fields: "files(id, name, mimeType, modifiedTime, parents)",
     orderBy: "modifiedTime desc",
     pageSize: 20,

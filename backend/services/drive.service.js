@@ -240,6 +240,19 @@ export const processNewFile = async (
 
     const user = await User.findById(userId);
 
+    if (isOwner === null) {
+      const drive = getDriveClient(
+        user.googleAccessToken,
+        user.googleRefreshToken,
+      );
+      const meta = await drive.files.get({ fileId, fields: "owners" });
+      isOwner = (meta.data.owners || []).some((o) => o.me);
+    }
+    if (!isOwner) {
+      console.log(`Skipping "${fileName}" — not owned by this user`);
+      return null;
+    }
+
     const userCategories = await Category.find({ userId });
     const mergedSubjects = { ...knownSubjects };
     userCategories.forEach((cat) => {
@@ -321,7 +334,7 @@ export const scanExistingFiles = async (userId) => {
 
   do {
     const response = await drive.files.list({
-      q: "trashed=false",
+      q: "'me' in owners and trashed=false",
       fields: "nextPageToken, files(id, name, mimeType)",
       pageSize: 100,
       pageToken,

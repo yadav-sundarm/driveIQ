@@ -21,3 +21,8 @@ export const updateThreshold = async (confidenceThreshold) => {
   });
   return response.data;
 };
+
+export const getTrainingStatus = async () => {
+  const response = await api.get("/users/me/training-status");
+  return response.data;
+};
